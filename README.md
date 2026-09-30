@@ -1,4 +1,4 @@
-# 😀 PIE-MP3-Biwheel-Control-Code
+# PIE-MP3-Biwheel-Control-Code
 
 
 
