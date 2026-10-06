@@ -13,7 +13,7 @@ def generate_frames():
             break
         success, frame = tracker.cam.read()
         if not success or frame is None:
-            time.sleep(0.1)
+            time.sleep(0.2)
             continue
         
         h, w = frame.shape[:2]
@@ -74,7 +74,9 @@ def generate_frames():
         frame_bytes = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        time.sleep(0.03)
+        
+        # Throttle to 10 FPS (100ms delay) to reduce CPU load and prevent overheating
+        time.sleep(0.1)
 
 @app.route('/video_feed')
 def video_feed():
@@ -82,7 +84,7 @@ def video_feed():
 
 @app.route('/')
 def index():
-    return "<h1>Arduino UNO Q Camera Live Stream with VisionTracker</h1><img src='/video_feed'>"
+    return "<h1>Arduino UNO Q Camera Live Stream (10 FPS)</h1><img src='/video_feed'>"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, threaded=True)
