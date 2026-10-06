@@ -1,6 +1,7 @@
 from flask import Flask, Response
 import cv2
 import numpy as np
+import time
 from vision import VisionTracker
 
 app = Flask(__name__)
@@ -14,7 +15,8 @@ def generate_frames():
             break
         success, frame = tracker.cam.read()
         if not success or frame is None:
-            break
+            time.sleep(0.1)
+            continue
         
         h, w = frame.shape[:2]
         cx, cy = w / 2.0, h / 2.0
@@ -70,6 +72,7 @@ def generate_frames():
         frame_bytes = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        time.sleep(0.03) # ~30 fps throttle for smooth streaming
 
 @app.route('/video_feed')
 def video_feed():
