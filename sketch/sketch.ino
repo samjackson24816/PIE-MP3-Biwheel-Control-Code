@@ -11,7 +11,7 @@ Adafruit_DCMotor *leftMotor = AFMS.getMotor(1);
 Adafruit_DCMotor *rightMotor = AFMS.getMotor(2);
 
 void onScan() {
-  Serial.println("RPC received: scan");
+  Serial.println("RPClite received: scan");
   leftMotor->setSpeed(60);
   rightMotor->setSpeed(60);
   leftMotor->run(FORWARD);
@@ -19,7 +19,7 @@ void onScan() {
 }
 
 void onHunt(float delta) {
-  Serial.print("RPC received: hunt with delta = ");
+  Serial.print("RPClite received: hunt with delta = ");
   Serial.println(delta);
 
   int baseSpeed = 75;
@@ -34,7 +34,7 @@ void onHunt(float delta) {
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("Biwheel Control - STM32 Initialized with RouterBridge & RPClite");
+  Serial.println("Biwheel Control - STM32 Initialized with RPClite");
 
   Bridge.begin();
 
@@ -51,12 +51,12 @@ void setup() {
   leftMotor->run(RELEASE);
   rightMotor->run(RELEASE);
 
-  // Bind RPC functions using Arduino_RPClite
-  RPC.bind("scan", onScan);
-  RPC.bind("hunt", onHunt);
+  // Bind RPC functions using RPClite instance
+  RPClite.bind("scan", onScan);
+  RPClite.bind("hunt", onHunt);
 }
 
 void loop() {
   // Run RPClite to process incoming calls from Python MPU
-  RPC.run();
+  RPClite.run();
 }
