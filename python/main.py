@@ -1,41 +1,34 @@
 import time
 from arduino.app_utils import App, Bridge
 
-print("Starting Biwheel Control Python MPU App with Bridge RPC...")
+print("Starting Biwheel Control Python MPU App with Bridge Library...")
 
 def run_sequence():
-    print("=== PART 1 TEST SEQUENCE START (Bridge RPC) ===")
+    print("=== PART 1 TEST SEQUENCE START (Bridge Library) ===")
     
     # 1. Scan for 10 seconds (turn slowly in circles)
-    print("Calling RPC 'scan' for 10 seconds...")
-    try:
-        Bridge.call("scan")
-    except Exception as e:
-        print(f"Bridge call 'scan' error: {e}")
-        
+    print("Setting Bridge mode to 'scan' for 10 seconds...")
+    Bridge.put("mode", "scan")
+    Bridge.put("delta", "0.0")
     time.sleep(10.0)
     
     # 2. Switch to Hunt mode: move forward with delta of 20 deg changing to 0 over 10 seconds
-    print("Calling RPC 'hunt' (delta 20 -> 0 over 10 seconds)...")
+    print("Setting Bridge mode to 'hunt' (delta 20 -> 0 over 10 seconds)...")
+    Bridge.put("mode", "hunt")
+    
     hunt_duration = 10.0
     steps = 20
     step_duration = hunt_duration / steps
     
     for i in range(steps + 1):
         delta = 20.0 * (1.0 - (i / steps))
-        try:
-            Bridge.call("hunt", float(delta))
-        except Exception as e:
-            print(f"Bridge call 'hunt' error: {e}")
-            
+        Bridge.put("delta", f"{delta:.1f}")
+        print(f"Bridge updated: mode=hunt, delta={delta:.1f}")
         time.sleep(step_duration)
         
-    print("HUNT sequence complete. Calling RPC 'hunt' with delta = 0.0...")
-    try:
-        Bridge.call("hunt", 0.0)
-    except Exception as e:
-        print(f"Bridge call 'hunt' error: {e}")
-        
+    print("HUNT sequence complete. Setting delta = 0.0...")
+    Bridge.put("delta", "0.0")
+    
     print("=== PART 1 TEST SEQUENCE COMPLETE ===")
 
 def loop():

@@ -1,6 +1,6 @@
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
-#include <RPC.h>
+#include <Bridge.h>
 
 // Create the motor shield object with the default I2C address
 Adafruit_MotorShield AFMS = Adafruit_MotorShield(); 
@@ -9,33 +9,12 @@ Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_DCMotor *leftMotor = AFMS.getMotor(1);
 Adafruit_DCMotor *rightMotor = AFMS.getMotor(2);
 
-// RPC callback for SCAN mode (turn slowly in circles)
-void setModeScan() {
-  Serial.println("RPC received: scan");
-  leftMotor->setSpeed(60);
-  rightMotor->setSpeed(60);
-  leftMotor->run(FORWARD);
-  rightMotor->run(BACKWARD);
-}
-
-// RPC callback for HUNT mode (move forward with delta adjustment)
-void setHuntDelta(float delta) {
-  Serial.print("RPC received: hunt with delta = ");
-  Serial.println(delta);
-
-  int baseSpeed = 75;
-  int leftSpeed = constrain(baseSpeed + (int)delta, 0, 255);
-  int rightSpeed = constrain(baseSpeed - (int)delta, 0, 255);
-
-  leftMotor->setSpeed(leftSpeed);
-  rightMotor->setSpeed(rightSpeed);
-  leftMotor->run(FORWARD);
-  rightMotor->run(FORWARD);
-}
-
 void setup() {
   Serial.begin(9600);
-  Serial.println("Biwheel Control - STM32 Initialized with RPC Bridge");
+  Serial.println("Biwheel Control - STM32 Initialized with Bridge");
+
+  // Initialize Bridge communication with Linux MPU
+  Bridge.begin();
 
   // Initialize the motor shield
   if (!AFMS.begin()) {
@@ -49,13 +28,44 @@ void setup() {
   rightMotor->setSpeed(0);
   leftMotor->run(RELEASE);
   rightMotor->run(RELEASE);
-
-  // Bind RPC functions to be callable from Python MPU side via Bridge
-  RPC.bind("scan", setModeScan);
-  RPC.bind("hunt", setHuntDelta);
 }
 
 void loop() {
-  // Process incoming RPC calls from Linux MPU
-  RPC.run();
+  char modeBuf[32];
+  char deltaBuf[32];
+
+  // Fetch mode and delta from Bridge key-value store updated by Python MPU
+  Bridge.get("mode", modeBuf, sizeof(modeBuf));
+  Bridge.get("delta", deltaBuf, sizeof(deltaBuf));
+
+  String mode = String(modeBuf);
+  mode.trim();
+  float delta = String(deltaBuf).toFloat();
+
+  if (mode == "scan") {
+    // Turn slowly in circles (one motor forward, one backward)
+    leftMotor->setSpeed(60);
+    rightMotor->setSpeed(60);
+    leftMotor->run(FORWARD);
+    rightMotor->run(BACKWARD);
+  } 
+  else if (mode == "hunt") {
+    int baseSpeed = 75;
+    int leftSpeed = constrain(baseSpeed + (int)delta, 0, 255);
+    int rightSpeed = constrain(baseSpeed - (int)delta, 0, 255);
+
+    leftMotor->setSpeed(leftSpeed);
+    rightMotor->setSpeed(rightSpeed);
+    leftMotor->run(FORWARD);
+    rightMotor->run(FORWARD);
+  } 
+  else {
+    // Default stop if mode not set
+    leftMotor->setSpeed(0);
+    rightMotor->setSpeed(0);
+    leftMotor->run(RELEASE);
+    rightMotor->run(RELEASE);
+  }
+
+  delay(100); // Check Bridge state periodically
 }
