@@ -1,7 +1,6 @@
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
 #include "Arduino_RouterBridge.h"
-#include "Arduino_RPClite.h"
 
 // Create the motor shield object with the default I2C address
 Adafruit_MotorShield AFMS = Adafruit_MotorShield(); 
@@ -11,7 +10,7 @@ Adafruit_DCMotor *leftMotor = AFMS.getMotor(1);
 Adafruit_DCMotor *rightMotor = AFMS.getMotor(2);
 
 void onScan() {
-  Serial.println("RPClite received: scan");
+  Serial.println("RouterBridge method called: scan");
   leftMotor->setSpeed(60);
   rightMotor->setSpeed(60);
   leftMotor->run(FORWARD);
@@ -19,7 +18,7 @@ void onScan() {
 }
 
 void onHunt(float delta) {
-  Serial.print("RPClite received: hunt with delta = ");
+  Serial.print("RouterBridge method called: hunt with delta = ");
   Serial.println(delta);
 
   int baseSpeed = 75;
@@ -29,12 +28,12 @@ void onHunt(float delta) {
   leftMotor->setSpeed(leftSpeed);
   rightMotor->setSpeed(rightSpeed);
   leftMotor->run(FORWARD);
-  rightMotor->run(FORWARD);
+  leftMotor->run(FORWARD);
 }
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("Biwheel Control - STM32 Initialized with RPClite");
+  Serial.println("Biwheel Control - STM32 Initialized with Arduino_RouterBridge");
 
   Bridge.begin();
 
@@ -51,12 +50,11 @@ void setup() {
   leftMotor->run(RELEASE);
   rightMotor->run(RELEASE);
 
-  // Bind RPC functions using RPClite instance
-  RPClite.bind("scan", onScan);
-  RPClite.bind("hunt", onHunt);
+  // Provide methods so Python MPU can call them via Bridge.notify / Bridge.call
+  Bridge.provide("scan", onScan);
+  Bridge.provide("hunt", onHunt);
 }
 
 void loop() {
-  // Run RPClite to process incoming calls from Python MPU
-  RPClite.run();
+  delay(100);
 }
