@@ -11,7 +11,7 @@ def run_sequence():
     Bridge.notify("scan")
     time.sleep(10.0)
     
-    # 2. Switch to Hunt mode: move forward with delta of 20 deg changing to 0 over 10 seconds
+    # 2. Switch to Hunt mode for 10 seconds (delta 20 -> 0)
     print("Notifying MCU: hunt (delta 20 -> 0 over 10 seconds)...")
     hunt_duration = 10.0
     steps = 20
@@ -22,8 +22,8 @@ def run_sequence():
         Bridge.notify("hunt", float(delta))
         time.sleep(step_duration)
         
-    print("HUNT sequence complete. Notifying MCU: hunt with delta = 0.0")
-    Bridge.notify("hunt", 0.0)
+    print("HUNT sequence complete (10 seconds elapsed). Stopping motors...")
+    Bridge.notify("stop")
     
     print("=== PART 1 TEST SEQUENCE COMPLETE ===")
 

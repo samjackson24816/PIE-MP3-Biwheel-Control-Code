@@ -9,13 +9,22 @@ Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_DCMotor *leftMotor = AFMS.getMotor(1);
 Adafruit_DCMotor *rightMotor = AFMS.getMotor(2);
 
+// ==========================================
+// CODE-WIDE CONFIGURATION PARAMETERS
+// ==========================================
+// Set to -1 if a motor is wired backwards physically
+const int LEFT_MOTOR_DIR = -1;
+const int RIGHT_MOTOR_DIR = 1; 
+
 void onScan() {
   Serial.println("RouterBridge method called: SCAN (Turning in circles)");
-  // Spin motors in opposite directions to rotate in place (scan)
-  leftMotor->setSpeed(100);
-  rightMotor->setSpeed(100);
-  leftMotor->run(FORWARD);
-  rightMotor->run(BACKWARD);
+  int lSpeed = 100 * LEFT_MOTOR_DIR;
+  int rSpeed = -100 * RIGHT_MOTOR_DIR; // Opposite directions for rotation
+
+  leftMotor->setSpeed(abs(lSpeed));
+  rightMotor->setSpeed(abs(rSpeed));
+  leftMotor->run(lSpeed >= 0 ? FORWARD : BACKWARD);
+  rightMotor->run(rSpeed >= 0 ? FORWARD : BACKWARD);
 }
 
 void onHunt(float delta) {
@@ -23,16 +32,22 @@ void onHunt(float delta) {
   Serial.println(delta);
 
   int baseSpeed = 75;
-  int leftSpeed = baseSpeed + (int)delta;
-  int rightSpeed = baseSpeed - (int)delta;
+  int lSpeed = (baseSpeed + (int)delta) * LEFT_MOTOR_DIR;
+  int rSpeed = (baseSpeed - (int)delta) * RIGHT_MOTOR_DIR;
 
-  // Set motor speeds (using absolute value for speed magnitude)
-  leftMotor->setSpeed(constrain(abs(leftSpeed), 0, 255));
-  rightMotor->setSpeed(constrain(abs(rightSpeed), 0, 255));
+  leftMotor->setSpeed(constrain(abs(lSpeed), 0, 255));
+  rightMotor->setSpeed(constrain(abs(rSpeed), 0, 255));
 
-  // Set motor directions (FORWARD if speed >= 0, BACKWARD if speed < 0)
-  leftMotor->run(leftSpeed >= 0 ? FORWARD : BACKWARD);
-  rightMotor->run(rightSpeed >= 0 ? FORWARD : BACKWARD);
+  leftMotor->run(lSpeed >= 0 ? FORWARD : BACKWARD);
+  rightMotor->run(rSpeed >= 0 ? FORWARD : BACKWARD);
+}
+
+void onStop() {
+  Serial.println("RouterBridge method called: STOP");
+  leftMotor->setSpeed(0);
+  rightMotor->setSpeed(0);
+  leftMotor->run(RELEASE);
+  rightMotor->run(RELEASE);
 }
 
 void setup() {
@@ -49,14 +64,12 @@ void setup() {
   Serial.println("Motor Shield found.");
 
   // Set initial stopped state
-  leftMotor->setSpeed(0);
-  rightMotor->setSpeed(0);
-  leftMotor->run(RELEASE);
-  rightMotor->run(RELEASE);
+  onStop();
 
-  // Provide methods so Python MPU can call them via Bridge.notify / Bridge.call
+  // Provide methods for Python MPU
   Bridge.provide("scan", onScan);
   Bridge.provide("hunt", onHunt);
+  Bridge.provide("stop", onStop);
 }
 
 void loop() {
