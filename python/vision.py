@@ -5,10 +5,12 @@ class VisionTracker:
     def __init__(self, camera_index=0):
         """Initializes webcam capture (default index 0 for UNO Q USB camera)."""
         self.cam = cv2.VideoCapture(camera_index)
+        self.cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    def get_largest_shape_position(self):
+    def get_largest_shape_position_from_frame(self, frame):
         """
-        Captures a frame from the webcam, detects red, green, and blue shapes,
+        Analyzes a given frame, detects red, green, and blue shapes,
         finds the largest shape overall, and returns its normalized position (x, y)
         where:
           - (0, 0) is the center of the frame
@@ -20,11 +22,7 @@ class VisionTracker:
             tuple: (x_norm, y_norm, color_name, area) if a shape is found,
                    otherwise (None, None, None, 0.0)
         """
-        if not self.cam.isOpened():
-            return None, None, None, 0.0
-
-        ret, frame = self.cam.read()
-        if not ret or frame is None:
+        if frame is None:
             return None, None, None, 0.0
 
         h, w = frame.shape[:2]
@@ -72,28 +70,31 @@ class VisionTracker:
             contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             for contour in contours:
                 area = cv2.contourArea(contour)
-                # Lowered min area threshold to 100 for better sensitivity
                 if area > 100 and area > largest_area:
                     largest_area = area
                     best_contour = contour
                     best_color = color_name
 
         if best_contour is not None:
-            # Calculate bounding box center
             x, y, w_box, h_box = cv2.boundingRect(best_contour)
             center_x = x + w_box / 2.0
             center_y = y + h_box / 2.0
 
-            # Normalize coordinates:
-            # Center (cx, cy) -> (0, 0)
-            # Right edge -> +1, Left edge -> -1
-            # Top edge -> +1, Bottom edge -> -1
             x_norm = (center_x - cx) / cx
             y_norm = (cy - center_y) / cy
 
             return float(x_norm), float(y_norm), best_color, float(largest_area)
 
         return None, None, None, 0.0
+
+    def get_largest_shape_position(self):
+        """Captures a frame and returns the largest shape normalized position."""
+        if not self.cam.isOpened():
+            return None, None, None, 0.0
+        ret, frame = self.cam.read()
+        if not ret or frame is None:
+            return None, None, None, 0.0
+        return self.get_largest_shape_position_from_frame(frame)
 
     def release(self):
         """Releases the webcam resource."""

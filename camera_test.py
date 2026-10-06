@@ -5,9 +5,7 @@ import time
 from vision import VisionTracker
 
 app = Flask(__name__)
-tracker = VisionTracker(camera_index=0) # Index 0 for UNO Q USB camera
-tracker.cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-tracker.cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+tracker = VisionTracker(camera_index=0)
 
 def generate_frames():
     while True:
@@ -21,7 +19,6 @@ def generate_frames():
         h, w = frame.shape[:2]
         cx, cy = w / 2.0, h / 2.0
         
-        # Dynamic font scaling and thickness based on frame height
         font_scale = max(0.8, h / 450.0)
         thickness = max(2, int(h / 200.0))
         
@@ -63,10 +60,8 @@ def generate_frames():
         cv2.line(frame, (int(cx) - cross_size, int(cy)), (int(cx) + cross_size, int(cy)), (0, 255, 255), thickness)
         cv2.line(frame, (int(cx), int(cy) - cross_size), (int(cx), int(cy) + cross_size), (0, 255, 255), thickness)
 
-        # Get normalized position using VisionTracker
-        x_norm, y_norm, color, area = tracker.get_largest_shape_position()
+        x_norm, y_norm, color, area = tracker.get_largest_shape_position_from_frame(frame)
         
-        # Always draw clear status banner on frame
         if x_norm is not None and y_norm is not None:
             info_text = f"Largest: {color} | X: {x_norm:+.2f}, Y: {y_norm:+.2f} | Area: {int(area)}"
             cv2.putText(frame, info_text, (30, 45), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), thickness)
@@ -74,10 +69,12 @@ def generate_frames():
             cv2.putText(frame, "Status: Searching for shapes...", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 165, 255), thickness)
 
         ret, buffer = cv2.imencode('.jpg', frame)
+        if not ret:
+            continue
         frame_bytes = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        time.sleep(0.03) # ~30 fps throttle
+        time.sleep(0.03)
 
 @app.route('/video_feed')
 def video_feed():
