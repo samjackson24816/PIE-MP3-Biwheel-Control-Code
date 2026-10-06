@@ -10,25 +10,29 @@ Adafruit_DCMotor *leftMotor = AFMS.getMotor(1);
 Adafruit_DCMotor *rightMotor = AFMS.getMotor(2);
 
 void onScan() {
-  Serial.println("RouterBridge method called: scan");
-  leftMotor->setSpeed(60);
-  rightMotor->setSpeed(60);
+  Serial.println("RouterBridge method called: SCAN (Turning in circles)");
+  // Spin motors in opposite directions to rotate in place (scan)
+  leftMotor->setSpeed(100);
+  rightMotor->setSpeed(100);
   leftMotor->run(FORWARD);
   rightMotor->run(BACKWARD);
 }
 
 void onHunt(float delta) {
-  Serial.print("RouterBridge method called: hunt with delta = ");
+  Serial.print("RouterBridge method called: HUNT with delta = ");
   Serial.println(delta);
 
   int baseSpeed = 75;
-  int leftSpeed = constrain(baseSpeed + (int)delta, 0, 255);
-  int rightSpeed = constrain(baseSpeed - (int)delta, 0, 255);
+  int leftSpeed = baseSpeed + (int)delta;
+  int rightSpeed = baseSpeed - (int)delta;
 
-  leftMotor->setSpeed(leftSpeed);
-  rightMotor->setSpeed(rightSpeed);
-  leftMotor->run(FORWARD);
-  leftMotor->run(FORWARD);
+  // Set motor speeds (using absolute value for speed magnitude)
+  leftMotor->setSpeed(constrain(abs(leftSpeed), 0, 255));
+  rightMotor->setSpeed(constrain(abs(rightSpeed), 0, 255));
+
+  // Set motor directions (FORWARD if speed >= 0, BACKWARD if speed < 0)
+  leftMotor->run(leftSpeed >= 0 ? FORWARD : BACKWARD);
+  rightMotor->run(rightSpeed >= 0 ? FORWARD : BACKWARD);
 }
 
 void setup() {
