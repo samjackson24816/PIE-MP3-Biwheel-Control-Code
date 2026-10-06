@@ -21,6 +21,10 @@ def generate_frames():
         h, w = frame.shape[:2]
         cx, cy = w / 2.0, h / 2.0
         
+        # Dynamic font scaling and thickness based on frame height
+        font_scale = max(0.8, h / 450.0)
+        thickness = max(2, int(h / 200.0))
+        
         hsvFrame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         
         red_lower1 = np.array([0, 120, 80], np.uint8)
@@ -50,29 +54,30 @@ def generate_frames():
         for color_name, mask, bgr in color_masks:
             contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             for contour in contours:
-                if cv2.contourArea(contour) > 400:
+                if cv2.contourArea(contour) > 100:
                     x, y, w_box, h_box = cv2.boundingRect(contour)
-                    cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), bgr, 2)
+                    cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), bgr, thickness)
 
         # Draw crosshair at center (0,0)
-        cv2.line(frame, (int(cx) - 15, int(cy)), (int(cx) + 15, int(cy)), (0, 255, 255), 2)
-        cv2.line(frame, (int(cx), int(cy) - 15), (int(cx), int(cy) + 15), (0, 255, 255), 2)
+        cross_size = 20
+        cv2.line(frame, (int(cx) - cross_size, int(cy)), (int(cx) + cross_size, int(cy)), (0, 255, 255), thickness)
+        cv2.line(frame, (int(cx), int(cy) - cross_size), (int(cx), int(cy) + cross_size), (0, 255, 255), thickness)
 
         # Get normalized position using VisionTracker
         x_norm, y_norm, color, area = tracker.get_largest_shape_position()
         
-        # Always draw status banner on frame so changes are immediately visible
+        # Always draw clear status banner on frame
         if x_norm is not None and y_norm is not None:
             info_text = f"Largest: {color} | X: {x_norm:+.2f}, Y: {y_norm:+.2f} | Area: {int(area)}"
-            cv2.putText(frame, info_text, (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            cv2.putText(frame, info_text, (30, 45), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), thickness)
         else:
-            cv2.putText(frame, "Status: Searching for Red/Green/Blue shapes...", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+            cv2.putText(frame, "Status: Searching for shapes...", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 165, 255), thickness)
 
         ret, buffer = cv2.imencode('.jpg', frame)
         frame_bytes = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        time.sleep(0.03) # ~30 fps throttle for smooth streaming
+        time.sleep(0.03) # ~30 fps throttle
 
 @app.route('/video_feed')
 def video_feed():

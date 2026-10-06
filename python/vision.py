@@ -72,7 +72,8 @@ class VisionTracker:
             contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             for contour in contours:
                 area = cv2.contourArea(contour)
-                if area > 400 and area > largest_area:
+                # Lowered min area threshold to 100 for better sensitivity
+                if area > 100 and area > largest_area:
                     largest_area = area
                     best_contour = contour
                     best_color = color_name
