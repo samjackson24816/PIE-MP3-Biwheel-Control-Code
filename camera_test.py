@@ -1,22 +1,73 @@
 from flask import Flask, Response
 import cv2
+import numpy as np
+from vision import VisionTracker
 
 app = Flask(__name__)
-camera = cv2.VideoCapture(0)
-camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+tracker = VisionTracker(camera_index=1)
+tracker.cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+tracker.cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
 def generate_frames():
     while True:
-        success, frame = camera.read()
-        if not success:
+        if not tracker.cam.isOpened():
             break
-        else:
-            # Encode frame as JPEG
-            ret, buffer = cv2.imencode('.jpg', frame)
-            frame_bytes = buffer.tobytes()
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        success, frame = tracker.cam.read()
+        if not success or frame is None:
+            break
+        
+        h, w = frame.shape[:2]
+        cx, cy = w / 2.0, h / 2.0
+        
+        hsvFrame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        
+        red_lower1 = np.array([0, 120, 80], np.uint8)
+        red_upper1 = np.array([10, 255, 255], np.uint8)
+        red_lower2 = np.array([170, 120, 80], np.uint8)
+        red_upper2 = np.array([180, 255, 255], np.uint8)
+        green_lower = np.array([25, 52, 72], np.uint8)
+        green_upper = np.array([102, 255, 255], np.uint8)
+        blue_lower = np.array([94, 80, 2], np.uint8)
+        blue_upper = np.array([120, 255, 255], np.uint8)
+        
+        red_mask = cv2.bitwise_or(cv2.inRange(hsvFrame, red_lower1, red_upper1), cv2.inRange(hsvFrame, red_lower2, red_upper2))
+        green_mask = cv2.inRange(hsvFrame, green_lower, green_upper)
+        blue_mask = cv2.inRange(hsvFrame, blue_lower, blue_upper)
+        
+        kernel = np.ones((5, 5), "uint8")
+        red_mask = cv2.dilate(red_mask, kernel)
+        green_mask = cv2.dilate(green_mask, kernel)
+        blue_mask = cv2.dilate(blue_mask, kernel)
+        
+        color_masks = [
+            ("Red", red_mask, (0, 0, 255)),
+            ("Green", green_mask, (0, 255, 0)),
+            ("Blue", blue_mask, (255, 0, 0))
+        ]
+        
+        for color_name, mask, bgr in color_masks:
+            contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            for contour in contours:
+                if cv2.contourArea(contour) > 400:
+                    x, y, w_box, h_box = cv2.boundingRect(contour)
+                    cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), bgr, 2)
+
+        # Draw crosshair at center (0,0)
+        cv2.line(frame, (int(cx) - 15, int(cy)), (int(cx) + 15, int(cy)), (0, 255, 255), 2)
+        cv2.line(frame, (int(cx), int(cy) - 15), (int(cx), int(cy) + 15), (0, 255, 255), 2)
+
+        # Get normalized position using VisionTracker
+        x_norm, y_norm, color, area = tracker.get_largest_shape_position()
+        if x_norm is not None and y_norm is not None:
+            # Find bounding box of largest shape for overlay
+            # (or display summary on top left)
+            info_text = f"Largest: {color} | X: {x_norm:+.2f}, Y: {y_norm:+.2f}"
+            cv2.putText(frame, info_text, (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+        ret, buffer = cv2.imencode('.jpg', frame)
+        frame_bytes = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
 @app.route('/video_feed')
 def video_feed():
@@ -24,8 +75,7 @@ def video_feed():
 
 @app.route('/')
 def index():
-    return "<h1>Arduino UNO Q USB8MP02G Live Stream</h1><img src='/video_feed'>"
+    return "<h1>Arduino UNO Q Camera Live Stream with VisionTracker</h1><img src='/video_feed'>"
 
 if __name__ == '__main__':
-    # Bind to all network interfaces on port 5000
     app.run(host='0.0.0.0', port=5000, threaded=True)
