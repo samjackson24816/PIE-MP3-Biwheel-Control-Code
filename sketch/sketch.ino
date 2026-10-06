@@ -1,5 +1,6 @@
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
+#include <RPC.h>
 
 // Create the motor shield object with the default I2C address
 Adafruit_MotorShield AFMS = Adafruit_MotorShield(); 
@@ -8,9 +9,33 @@ Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_DCMotor *leftMotor = AFMS.getMotor(1);
 Adafruit_DCMotor *rightMotor = AFMS.getMotor(2);
 
+// RPC callback for SCAN mode (turn slowly in circles)
+void setModeScan() {
+  Serial.println("RPC received: scan");
+  leftMotor->setSpeed(60);
+  rightMotor->setSpeed(60);
+  leftMotor->run(FORWARD);
+  rightMotor->run(BACKWARD);
+}
+
+// RPC callback for HUNT mode (move forward with delta adjustment)
+void setHuntDelta(float delta) {
+  Serial.print("RPC received: hunt with delta = ");
+  Serial.println(delta);
+
+  int baseSpeed = 75;
+  int leftSpeed = constrain(baseSpeed + (int)delta, 0, 255);
+  int rightSpeed = constrain(baseSpeed - (int)delta, 0, 255);
+
+  leftMotor->setSpeed(leftSpeed);
+  rightMotor->setSpeed(rightSpeed);
+  leftMotor->run(FORWARD);
+  rightMotor->run(FORWARD);
+}
+
 void setup() {
   Serial.begin(9600);
-  Serial.println("Continuous Low-Speed Motor Test");
+  Serial.println("Biwheel Control - STM32 Initialized with RPC Bridge");
 
   // Initialize the motor shield
   if (!AFMS.begin()) {
@@ -19,16 +44,18 @@ void setup() {
   }
   Serial.println("Motor Shield found.");
 
-  // Set initial low speed (0 to 255 scale; 75 is a slow, safe crawling speed)
-  leftMotor->setSpeed(75);
-  rightMotor->setSpeed(75);
+  // Set initial stopped state
+  leftMotor->setSpeed(0);
+  rightMotor->setSpeed(0);
+  leftMotor->run(RELEASE);
+  rightMotor->run(RELEASE);
 
-  // Start both motors moving forward continuously
-  leftMotor->run(FORWARD);
-  rightMotor->run(FORWARD);
+  // Bind RPC functions to be callable from Python MPU side via Bridge
+  RPC.bind("scan", setModeScan);
+  RPC.bind("hunt", setHuntDelta);
 }
 
 void loop() {
-  // Motors will run continuously at low speed; 
-  // you can add sensor reads or debugging here later.
+  // Process incoming RPC calls from Linux MPU
+  RPC.run();
 }
