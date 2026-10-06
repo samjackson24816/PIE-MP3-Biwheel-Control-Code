@@ -4,7 +4,7 @@ import numpy as np
 from vision import VisionTracker
 
 app = Flask(__name__)
-tracker = VisionTracker(camera_index=1)
+tracker = VisionTracker(camera_index=0) # Index 0 for UNO Q USB camera
 tracker.cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 tracker.cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
@@ -58,11 +58,13 @@ def generate_frames():
 
         # Get normalized position using VisionTracker
         x_norm, y_norm, color, area = tracker.get_largest_shape_position()
+        
+        # Always draw status banner on frame so changes are immediately visible
         if x_norm is not None and y_norm is not None:
-            # Find bounding box of largest shape for overlay
-            # (or display summary on top left)
-            info_text = f"Largest: {color} | X: {x_norm:+.2f}, Y: {y_norm:+.2f}"
-            cv2.putText(frame, info_text, (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            info_text = f"Largest: {color} | X: {x_norm:+.2f}, Y: {y_norm:+.2f} | Area: {int(area)}"
+            cv2.putText(frame, info_text, (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        else:
+            cv2.putText(frame, "Status: Searching for Red/Green/Blue shapes...", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
 
         ret, buffer = cv2.imencode('.jpg', frame)
         frame_bytes = buffer.tobytes()

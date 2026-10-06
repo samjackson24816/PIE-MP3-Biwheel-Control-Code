@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 
 class VisionTracker:
-    def __init__(self, camera_index=1):
-        """Initializes webcam capture."""
+    def __init__(self, camera_index=0):
+        """Initializes webcam capture (default index 0 for UNO Q USB camera)."""
         self.cam = cv2.VideoCapture(camera_index)
 
     def get_largest_shape_position(self):
