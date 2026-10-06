@@ -4,27 +4,37 @@ from arduino.app_utils import App, Bridge
 print("Starting Biwheel Control Python MPU App with RouterBridge...")
 
 def run_sequence():
-    print("=== PART 1 TEST SEQUENCE START (RouterBridge) ===")
+    print("=== PART 1 TEST SEQUENCE START (RouterBridge RPC) ===")
     
     # 1. Scan for 10 seconds (turn slowly in circles)
-    print("Notifying MCU: scan")
-    Bridge.notify("scan")
+    print("Calling RPC 'scan'...")
+    try:
+        Bridge.call("scan")
+    except Exception as e:
+        print(f"Bridge.call('scan') error: {e}")
+        
     time.sleep(10.0)
     
     # 2. Switch to Hunt mode: move forward with delta of 20 deg changing to 0 over 10 seconds
-    print("Notifying MCU: hunt (delta 20 -> 0 over 10 seconds)...")
+    print("Calling RPC 'hunt' (delta 20 -> 0 over 10 seconds)...")
     hunt_duration = 10.0
     steps = 20
     step_duration = hunt_duration / steps
     
     for i in range(steps + 1):
         delta = 20.0 * (1.0 - (i / steps))
-        Bridge.notify("hunt", float(delta))
+        try:
+            Bridge.call("hunt", float(delta))
+        except Exception as e:
+            print(f"Bridge.call('hunt') error: {e}")
         time.sleep(step_duration)
         
-    print("HUNT sequence complete. Notifying MCU: hunt with delta = 0.0")
-    Bridge.notify("hunt", 0.0)
-    
+    print("HUNT sequence complete. Calling RPC 'hunt' with 0.0...")
+    try:
+        Bridge.call("hunt", 0.0)
+    except Exception as e:
+        print(f"Bridge.call('hunt') error: {e}")
+        
     print("=== PART 1 TEST SEQUENCE COMPLETE ===")
 
 def loop():

@@ -1,6 +1,7 @@
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
 #include "Arduino_RouterBridge.h"
+#include "Arduino_RPClite.h"
 
 // Create the motor shield object with the default I2C address
 Adafruit_MotorShield AFMS = Adafruit_MotorShield(); 
@@ -10,15 +11,15 @@ Adafruit_DCMotor *leftMotor = AFMS.getMotor(1);
 Adafruit_DCMotor *rightMotor = AFMS.getMotor(2);
 
 void onScan() {
-  Serial.println("RouterBridge event received: scan");
+  Serial.println("RPC received: scan");
   leftMotor->setSpeed(60);
   rightMotor->setSpeed(60);
   leftMotor->run(FORWARD);
-  leftMotor->run(BACKWARD);
+  rightMotor->run(BACKWARD);
 }
 
 void onHunt(float delta) {
-  Serial.print("RouterBridge event received: hunt with delta = ");
+  Serial.print("RPC received: hunt with delta = ");
   Serial.println(delta);
 
   int baseSpeed = 75;
@@ -33,7 +34,7 @@ void onHunt(float delta) {
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("Biwheel Control - STM32 Initialized with RouterBridge");
+  Serial.println("Biwheel Control - STM32 Initialized with RouterBridge & RPClite");
 
   Bridge.begin();
 
@@ -50,12 +51,12 @@ void setup() {
   leftMotor->run(RELEASE);
   rightMotor->run(RELEASE);
 
-  // Register RouterBridge callbacks for events sent from Python MPU
-  Bridge.on("scan", onScan);
-  Bridge.on("hunt", onHunt);
+  // Bind RPC functions using Arduino_RPClite
+  RPC.bind("scan", onScan);
+  RPC.bind("hunt", onHunt);
 }
 
 void loop() {
-  // Poll RouterBridge for incoming events from Python
-  Bridge.poll();
+  // Run RPClite to process incoming calls from Python MPU
+  RPC.run();
 }
