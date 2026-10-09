@@ -171,8 +171,12 @@
                     <div id="val-area" class="metric-value">0 px</div>
                 </div>
                 <div class="metric-box">
-                    <div class="metric-label">Vision FPS</div>
+                    <div class="metric-label">Logic Loop FPS</div>
                     <div id="val-fps" class="metric-value">0.0</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Display Stream FPS</div>
+                    <div id="val-display-fps" class="metric-value">0.0</div>
                 </div>
                 <div class="metric-box">
                     <div class="metric-label">Y Offset (y_norm)</div>
@@ -327,6 +331,7 @@
                 document.getElementById('val-color').innerText = d.color ? d.color : 'None';
                 document.getElementById('val-area').innerText = Math.round(d.area) + ' px';
                 document.getElementById('val-fps').innerText = d.fps.toFixed(1);
+                document.getElementById('val-display-fps').innerText = (d.display_fps !== undefined ? d.display_fps : 0.0).toFixed(1);
                 document.getElementById('val-motor-l').innerText = d.left_speed;
                 document.getElementById('val-motor-r').innerText = d.right_speed;
 

@@ -17,6 +17,14 @@ class DisplayManager:
 
         self.lock = threading.Lock()
         self.latest_jpeg = None
+        self.last_encode_time = 0.0
+        # Throttle display encoding to ~10 FPS (100ms) to ensure consistent, low CPU usage
+        self.encode_interval = 0.10
+
+        # Display FPS calculation
+        self.display_frame_count = 0
+        self.display_last_time = time.time()
+        self.calculated_display_fps = 0.0
 
         cfg = initial_config or {}
         self.telemetry = {
@@ -29,6 +37,7 @@ class DisplayManager:
             "left_speed": 0,
             "right_speed": 0,
             "fps": 0.0,
+            "display_fps": 0.0,
             "scan_speed": cfg.get("scan_speed", 30),
             "hunt_base_speed": cfg.get("hunt_base_speed", 50),
             "min_area": cfg.get("min_area", 100),
@@ -68,7 +77,7 @@ class DisplayManager:
                         continue
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                    time.sleep(0.04)  # ~25 FPS max client transmission
+                    time.sleep(0.10)  # Stream client transmission matched to ~10 FPS display rate
             return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
         @self.app.route('/status')
@@ -99,24 +108,39 @@ class DisplayManager:
                 return jsonify({"success": success, "config": cfg})
             return jsonify({"success": False, "config": {}})
 
-    def draw_telemetry_overlay(self, frame, state, fps, color_name=None, x_norm=None, delta=None):
+    def draw_telemetry_overlay(self, frame, state, fps, display_fps=0.0, color_name=None, x_norm=None, delta=None):
         """Draws telemetry overlay text directly onto the video frame."""
-        cv2.putText(frame, f"STATE: {state} | FPS: {fps:.1f}", 
-                    (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
+        cv2.putText(frame, f"STATE: {state} | LOGIC: {fps:.1f} FPS | DISP: {display_fps:.1f} FPS", 
+                    (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 255, 255), 2)
         if state == "HUNT" and color_name is not None and x_norm is not None and delta is not None:
             cv2.putText(frame, f"Target: {color_name} | x_norm: {x_norm:+.2f} | delta: {delta:+.1f}", 
                         (15, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 255, 0), 2)
 
     def update_frame_and_telemetry(self, frame, telemetry_dict):
-        """Encodes frame and atomically updates dashboard telemetry and video frame."""
-        ret_enc, encoded = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-        encoded_bytes = encoded.tobytes() if ret_enc else None
+        """Encodes frame at throttled display FPS and lower quality, maintaining deterministic behavior."""
+        now = time.time()
+        encoded_bytes = None
+
+        # Track display encoding FPS
+        if frame is not None and (now - self.last_encode_time >= self.encode_interval):
+            self.last_encode_time = now
+            self.display_frame_count += 1
+            ret_enc, encoded = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 40])
+            if ret_enc:
+                encoded_bytes = encoded.tobytes()
+
+        # Update display FPS measurement once per second
+        if now - self.display_last_time >= 1.0:
+            self.calculated_display_fps = self.display_frame_count / (now - self.display_last_time)
+            self.display_frame_count = 0
+            self.display_last_time = now
 
         with self.lock:
             if encoded_bytes is not None:
                 self.latest_jpeg = encoded_bytes
             if telemetry_dict:
                 self.telemetry.update(telemetry_dict)
+            self.telemetry["display_fps"] = self.calculated_display_fps
 
     def start(self):
         """Starts the Flask server thread."""

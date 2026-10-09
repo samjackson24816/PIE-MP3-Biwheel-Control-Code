@@ -212,6 +212,7 @@ def step():
         frame=frame,
         state=current_state,
         fps=calculated_fps,
+        display_fps=display_mgr.calculated_display_fps,
         color_name=color_name,
         x_norm=x_norm,
         delta=delta
@@ -239,7 +240,8 @@ def step():
         }
     )
 
-    time.sleep(0.03)
+    # Note: No artificial sleep here. cam.read() naturally blocks and rates-limits 
+    # to the camera hardware frame rate (e.g. 30 FPS) without adding artificial latency.
 
 if __name__ == '__main__':
     App.run(user_loop=step)
