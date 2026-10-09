@@ -37,10 +37,10 @@ class VisionTracker:
 
         hsvFrame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        # Red color ranges (slightly tightened thresholds)
-        red_lower1 = np.array([0, 140, 100], np.uint8)
+        # Red color ranges
+        red_lower1 = np.array([0, 120, 80], np.uint8)
         red_upper1 = np.array([10, 255, 255], np.uint8)
-        red_lower2 = np.array([170, 140, 100], np.uint8)
+        red_lower2 = np.array([170, 120, 80], np.uint8)
         red_upper2 = np.array([180, 255, 255], np.uint8)
         
 
@@ -64,7 +64,7 @@ class VisionTracker:
             contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             for contour in contours:
                 area = cv2.contourArea(contour)
-                if area > 500:
+                if area > 100:
                     bx, by, bw, bh = cv2.boundingRect(contour)
                     if draw_annotations:
                         cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), bgr_color, 2)
