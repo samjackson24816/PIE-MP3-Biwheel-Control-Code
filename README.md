@@ -16,3 +16,6 @@ Right now, I want to have dummy script on the linux computer that scans for 10 s
 We now have both the scan and hunt communication working and the camera reading input
 
 Next, we need to take the x offset (what you can see in the camera view) and use it to be the delta for the hunt command We also need to trigger the hunt command when an item enters the frame
+
+
+The camera and webserver displaying info is now working, the next step is to tune the camera
