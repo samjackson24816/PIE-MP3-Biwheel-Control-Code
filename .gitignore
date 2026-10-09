@@ -1,2 +1,4 @@
 # ignore app cache folder
 .cache/
+python/.DS_Store
+python/__pycache__/*
