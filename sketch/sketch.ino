@@ -23,7 +23,7 @@ const int HUNT_BASE_SPEED = 50;
 void onScan() {
   Serial.println("RouterBridge method called: SCAN (Turning in circles)");
   int lSpeed = SCAN_SPEED * LEFT_MOTOR_DIR;
-  int rSpeed = - HUNT_BASE_SPEED * RIGHT_MOTOR_DIR; // Opposite directions for rotation
+  int rSpeed = - SCAN_SPEED * RIGHT_MOTOR_DIR; // Opposite directions for rotation
 
   leftMotor->setSpeed(abs(lSpeed));
   rightMotor->setSpeed(abs(rSpeed));
