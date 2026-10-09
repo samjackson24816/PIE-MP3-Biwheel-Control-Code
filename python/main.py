@@ -17,7 +17,7 @@ print("Starting Biwheel Control Python MPU App with Direct-Connection Web Dashbo
 state_lock = threading.Lock()
 latest_jpeg = None
 current_telemetry = {
-    "state": "SCAN",
+    "state": "INITIALIZING",
     "x_offset": None,
     "y_offset": None,
     "color": None,
@@ -27,6 +27,12 @@ current_telemetry = {
     "right_speed": 0,
     "fps": 0.0
 }
+
+# Create an initial placeholder image immediately so web stream never blocks
+init_img = np.zeros((480, 640, 3), dtype=np.uint8)
+cv2.putText(init_img, "Camera Initializing...", (140, 240), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+_, enc_init = cv2.imencode('.jpg', init_img)
+latest_jpeg = enc_init.tobytes()
 
 app = Flask(__name__)
 
@@ -106,6 +112,7 @@ def index():
         }
         .state-scan { background-color: #d35400; color: #fff; }
         .state-hunt { background-color: #27ae60; color: #fff; }
+        .state-init { background-color: #7f8c8d; color: #fff; }
         .metric-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -141,7 +148,7 @@ def index():
             <img src="/video_feed" alt="Live Camera Feed">
         </div>
         <div class="card telemetry-card">
-            <div id="state-banner" class="state-banner state-scan">SCANNING</div>
+            <div id="state-banner" class="state-banner state-init">INITIALIZING</div>
             <div class="metric-grid">
                 <div class="metric-box">
                     <div class="metric-label">X Offset (x_norm)</div>
@@ -192,8 +199,16 @@ def index():
                 const d = await res.json();
 
                 const banner = document.getElementById('state-banner');
-                banner.innerText = d.state === 'HUNT' ? 'HUNTING TARGET' : 'SCANNING';
-                banner.className = 'state-banner ' + (d.state === 'HUNT' ? 'state-hunt' : 'state-scan');
+                if (d.state === 'HUNT') {
+                    banner.innerText = 'HUNTING TARGET';
+                    banner.className = 'state-banner state-hunt';
+                } else if (d.state === 'SCAN') {
+                    banner.innerText = 'SCANNING';
+                    banner.className = 'state-banner state-scan';
+                } else {
+                    banner.innerText = d.state;
+                    banner.className = 'state-banner state-init';
+                }
 
                 document.getElementById('val-x').innerText = d.x_offset !== null ? (d.x_offset > 0 ? '+' : '') + d.x_offset.toFixed(2) : '--';
                 document.getElementById('val-y').innerText = d.y_offset !== null ? (d.y_offset > 0 ? '+' : '') + d.y_offset.toFixed(2) : '--';
@@ -214,111 +229,104 @@ def index():
 def start_flask_server():
     app.run(host='0.0.0.0', port=5000, threaded=True, use_reloader=False)
 
-def run_vision_and_control():
-    global latest_jpeg, current_telemetry
-    print("=== PART 2 VISION & CONTROL PIPELINE STARTING ===")
+# Start Flask server immediately at import time so port 5000 is always alive
+flask_thread = threading.Thread(target=start_flask_server, daemon=True)
+flask_thread.start()
+print("Flask server thread started immediately on port 5000.")
+
+tracker = None
+current_state = "SCAN"
+
+def init_vision_and_control():
+    global tracker, current_state
     tracker = VisionTracker()
-
-    current_state = "SCAN"
-    Bridge.notify("scan")
-    print("Initial State: SCAN (Turning slowly in circles)")
-
-    # Configuration constants matching sketch.ino
-    SCAN_SPEED = 30
-    HUNT_BASE_SPEED = 50
-
-    last_time = time.time()
-    frame_count = 0
-    calculated_fps = 0.0
-
     try:
-        while True:
-            ret, frame = tracker.cam.read()
-            if not ret or frame is None:
-                time.sleep(0.04)
-                continue
-
-            frame_count += 1
-            now = time.time()
-            if now - last_time >= 1.0:
-                calculated_fps = frame_count / (now - last_time)
-                frame_count = 0
-                last_time = now
-
-            # Process frame once (segmentation, contouring, and in-place drawing)
-            x_norm, y_norm, color_name, area, best_box = tracker.process_frame(frame, draw_annotations=True)
-
-            delta = 0.0
-            # State determination & Bridge command
-            if x_norm is not None and area > 100:
-                if current_state != "HUNT":
-                    print(f"Target found ({color_name}, area={int(area)}) -> Switching to HUNT")
-                    current_state = "HUNT"
-
-                delta = x_norm * 30.0
-                Bridge.notify("hunt", float(delta))
-
-                # Exact motor calculation matching sketch.ino
-                l_speed = HUNT_BASE_SPEED + int(delta)
-                r_speed = HUNT_BASE_SPEED - int(delta)
-            else:
-                if current_state != "SCAN":
-                    print("Target lost -> Switching to SCAN")
-                    current_state = "SCAN"
-                    Bridge.notify("scan")
-
-                l_speed = SCAN_SPEED
-                r_speed = -HUNT_BASE_SPEED
-
-            # Add status text overlay directly on frame so the video feed itself shows real-time telemetry
-            cv2.putText(frame, f"STATE: {current_state} | FPS: {calculated_fps:.1f}", 
-                        (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
-            if current_state == "HUNT":
-                cv2.putText(frame, f"Target: {color_name} | x_norm: {x_norm:+.2f} | delta: {delta:+.1f}", 
-                            (15, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 255, 0), 2)
-
-            # Single JPEG compression pass for the webserver
-            ret_enc, encoded = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-            if ret_enc:
-                encoded_bytes = encoded.tobytes()
-            else:
-                encoded_bytes = None
-
-            # Update shared direct connection data in one atomic operation
-            with state_lock:
-                if encoded_bytes is not None:
-                    latest_jpeg = encoded_bytes
-                current_telemetry = {
-                    "state": current_state,
-                    "x_offset": x_norm,
-                    "y_offset": y_norm,
-                    "color": color_name,
-                    "area": area,
-                    "delta": delta,
-                    "left_speed": l_speed,
-                    "right_speed": r_speed,
-                    "fps": calculated_fps
-                }
-
-            # Loop pace (~20-25 FPS)
-            time.sleep(0.04)
-
+        Bridge.notify("scan")
+        print("Initial state sent to Bridge: SCAN")
     except Exception as e:
-        print(f"Error in vision control loop: {e}")
-    finally:
-        tracker.release()
-        Bridge.notify("stop")
+        print(f"Bridge notify exception: {e}")
 
-def loop():
-    # Start web server directly inside main.py
-    flask_thread = threading.Thread(target=start_flask_server, daemon=True)
-    flask_thread.start()
-    print("Direct Webserver running at http://0.0.0.0:5000")
+SCAN_SPEED = 30
+HUNT_BASE_SPEED = 50
+last_time = time.time()
+frame_count = 0
+calculated_fps = 0.0
 
-    # Run the main vision and control loop directly
-    run_vision_and_control()
+def step():
+    """Executed repeatedly by Arduino App loop."""
+    global tracker, current_state, latest_jpeg, current_telemetry
+    global last_time, frame_count, calculated_fps
 
-    while True:
-        time.sleep(60)
+    if tracker is None:
+        init_vision_and_control()
 
-App.run(user_loop=loop)
+    ret, frame = tracker.cam.read()
+    if not ret or frame is None:
+        time.sleep(0.04)
+        return
+
+    frame_count += 1
+    now = time.time()
+    if now - last_time >= 1.0:
+        calculated_fps = frame_count / (now - last_time)
+        frame_count = 0
+        last_time = now
+
+    # Single pass vision processing & drawing
+    x_norm, y_norm, color_name, area, best_box = tracker.process_frame(frame, draw_annotations=True)
+
+    delta = 0.0
+    if x_norm is not None and area > 100:
+        if current_state != "HUNT":
+            print(f"Target found ({color_name}, area={int(area)}) -> Switching to HUNT")
+            current_state = "HUNT"
+
+        delta = x_norm * 30.0
+        try:
+            Bridge.notify("hunt", float(delta))
+        except Exception:
+            pass
+
+        l_speed = HUNT_BASE_SPEED + int(delta)
+        r_speed = HUNT_BASE_SPEED - int(delta)
+    else:
+        if current_state != "SCAN":
+            print("Target lost -> Switching to SCAN")
+            current_state = "SCAN"
+            try:
+                Bridge.notify("scan")
+            except Exception:
+                pass
+
+        l_speed = SCAN_SPEED
+        r_speed = -HUNT_BASE_SPEED
+
+    # Draw telemetry overlay text directly onto frame
+    cv2.putText(frame, f"STATE: {current_state} | FPS: {calculated_fps:.1f}", 
+                (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
+    if current_state == "HUNT":
+        cv2.putText(frame, f"Target: {color_name} | x_norm: {x_norm:+.2f} | delta: {delta:+.1f}", 
+                    (15, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 255, 0), 2)
+
+    ret_enc, encoded = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+    encoded_bytes = encoded.tobytes() if ret_enc else None
+
+    with state_lock:
+        if encoded_bytes is not None:
+            latest_jpeg = encoded_bytes
+        current_telemetry = {
+            "state": current_state,
+            "x_offset": x_norm,
+            "y_offset": y_norm,
+            "color": color_name,
+            "area": area,
+            "delta": delta,
+            "left_speed": l_speed,
+            "right_speed": r_speed,
+            "fps": calculated_fps
+        }
+
+    time.sleep(0.03)
+
+if __name__ == '__main__':
+    App.run(user_loop=step)
