@@ -19,22 +19,18 @@ class VisionTracker:
         else:
             print("ERROR: Could not open camera at index 0 or 1.")
 
-    def get_largest_shape_position_from_frame(self, frame):
+    def process_frame(self, frame, draw_annotations=True):
         """
-        Analyzes a given frame, detects red, green, and blue shapes,
-        finds the largest shape overall, and returns its normalized position (x, y)
-        where:
-          - (0, 0) is the center of the frame
-          - Upper right corner is (1, 1)
-          - X ranges from -1 (left) to +1 (right)
-          - Y ranges from -1 (bottom) to +1 (top)
+        Runs color segmentation and shape detection in a single pass.
+        Optionally annotates the frame in-place with bounding boxes, center crosshairs,
+        and target labels so that downstream visualization requires zero extra compute.
 
         Returns:
-            tuple: (x_norm, y_norm, color_name, area) if a shape is found,
-                   otherwise (None, None, None, 0.0)
+            tuple: (x_norm, y_norm, color_name, area, best_box)
+                   where best_box is (x, y, w, h) or None
         """
         if frame is None:
-            return None, None, None, 0.0
+            return None, None, None, 0.0, None
 
         h, w = frame.shape[:2]
         cx, cy = w / 2.0, h / 2.0
@@ -68,44 +64,55 @@ class VisionTracker:
         blue_mask = cv2.dilate(blue_mask, kernel)
 
         color_masks = [
-            ("Red", red_mask),
-            ("Green", green_mask),
-            ("Blue", blue_mask)
+            ("Red", red_mask, (0, 0, 255)),
+            ("Green", green_mask, (0, 255, 0)),
+            ("Blue", blue_mask, (255, 0, 0))
         ]
 
-        largest_area = 0
-        best_contour = None
+        largest_area = 0.0
+        best_box = None
         best_color = None
 
-        for color_name, mask in color_masks:
+        for color_name, mask, bgr_color in color_masks:
             contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             for contour in contours:
                 area = cv2.contourArea(contour)
-                if area > 100 and area > largest_area:
-                    largest_area = area
-                    best_contour = contour
-                    best_color = color_name
+                if area > 100:
+                    bx, by, bw, bh = cv2.boundingRect(contour)
+                    if draw_annotations:
+                        cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), bgr_color, 2)
+                    if area > largest_area:
+                        largest_area = float(area)
+                        best_box = (bx, by, bw, bh)
+                        best_color = color_name
 
-        if best_contour is not None:
-            x, y, w_box, h_box = cv2.boundingRect(best_contour)
-            center_x = x + w_box / 2.0
-            center_y = y + h_box / 2.0
+        # Draw crosshair at center (0,0)
+        if draw_annotations:
+            cross_size = 20
+            cv2.line(frame, (int(cx) - cross_size, int(cy)), (int(cx) + cross_size, int(cy)), (0, 255, 255), 2)
+            cv2.line(frame, (int(cx), int(cy) - cross_size), (int(cx), int(cy) + cross_size), (0, 255, 255), 2)
+
+        if best_box is not None:
+            bx, by, bw, bh = best_box
+            center_x = bx + bw / 2.0
+            center_y = by + bh / 2.0
 
             x_norm = (center_x - cx) / cx
             y_norm = (cy - center_y) / cy
 
-            return float(x_norm), float(y_norm), best_color, float(largest_area)
+            if draw_annotations:
+                # Highlight the targeted/largest box with a thicker yellow border and center dot
+                cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (0, 255, 255), 3)
+                cv2.circle(frame, (int(center_x), int(center_y)), 5, (0, 255, 255), -1)
 
-        return None, None, None, 0.0
+            return float(x_norm), float(y_norm), best_color, float(largest_area), best_box
 
-    def get_largest_shape_position(self):
-        """Captures a frame and returns the largest shape normalized position."""
-        if not self.cam.isOpened():
-            return None, None, None, 0.0
-        ret, frame = self.cam.read()
-        if not ret or frame is None:
-            return None, None, None, 0.0
-        return self.get_largest_shape_position_from_frame(frame)
+        return None, None, None, 0.0, None
+
+    def get_largest_shape_position_from_frame(self, frame):
+        """Backward compatibility helper."""
+        x_norm, y_norm, color, area, _ = self.process_frame(frame, draw_annotations=False)
+        return x_norm, y_norm, color, area
 
     def release(self):
         """Releases the webcam resource."""

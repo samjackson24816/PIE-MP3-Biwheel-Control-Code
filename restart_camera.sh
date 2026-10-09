@@ -1,13 +1,12 @@
 #!/bin/bash
-# Stop any existing camera server processes
-echo "Stopping existing camera server processes..."
-pkill -f camera_test.py
+# Stop any existing camera test or flask servers running on port 5000
+echo "Stopping existing servers on port 5000..."
+fuser -k 5000/tcp 2>/dev/null || true
+pkill -f camera_test.py 2>/dev/null || true
 
-# Start the camera test server persistently using nohup so it survives SSH disconnection
-echo "Starting camera_test.py persistently..."
-nohup python3 camera_test.py > camera_server.log 2>&1 &
-disown
+# Restart the Arduino App which runs python/main.py
+echo "Restarting Arduino App (PIE-MP3-Biwheel-Control-Code)..."
+arduino-app-cli app restart PIE-MP3-Biwheel-Control-Code
 
-echo "Camera server is now running persistently in the background!"
-echo "Logs are saved to camera_server.log"
-echo "Access the live stream at http://<board-ip>:5000"
+echo "Arduino App restarted! python/main.py is running the live dashboard and vision control."
+echo "Access the live stream & telemetry dashboard at http://<board-ip>:5000"
