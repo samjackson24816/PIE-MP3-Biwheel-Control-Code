@@ -239,7 +239,11 @@ current_state = "SCAN"
 
 def init_vision_and_control():
     global tracker, current_state
-    tracker = VisionTracker()
+    try:
+        tracker = VisionTracker()
+    except Exception as e:
+        print(f"VisionTracker initialization error: {e}")
+        tracker = None
     try:
         Bridge.notify("scan")
         print("Initial state sent to Bridge: SCAN")
@@ -259,6 +263,10 @@ def step():
 
     if tracker is None:
         init_vision_and_control()
+
+    if tracker is None or not getattr(tracker, 'cam', None) or not tracker.cam.isOpened():
+        time.sleep(0.5)
+        return
 
     ret, frame = tracker.cam.read()
     if not ret or frame is None:
