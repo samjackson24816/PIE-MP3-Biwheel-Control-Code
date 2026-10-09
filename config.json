@@ -1,0 +1,8 @@
+{
+  "scan_speed": 30,
+  "hunt_base_speed": 50,
+  "min_area": 100,
+  "min_sat": 120,
+  "min_val": 80,
+  "hue_tolerance": 10
+}

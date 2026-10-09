@@ -2,6 +2,7 @@ import time
 import threading
 import sys
 import os
+import json
 import cv2
 import numpy as np
 from flask import Flask, Response, jsonify, request
@@ -13,15 +14,59 @@ from vision import VisionTracker
 
 print("Starting Biwheel Control Python MPU App with Direct-Connection Web Dashboard...")
 
-# Shared configurable parameters (updated dynamically by web slider)
-scan_speed = 30
-hunt_base_speed = 50
+# Config file path for persistent settings
+CONFIG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config.json'))
 
-# Vision parameter defaults
-min_area = 100
-min_sat = 120
-min_val = 80
-hue_tolerance = 10
+# Hardcoded system defaults
+DEFAULT_CONFIG = {
+    "scan_speed": 30,
+    "hunt_base_speed": 50,
+    "min_area": 100,
+    "min_sat": 120,
+    "min_val": 80,
+    "hue_tolerance": 10
+}
+
+def load_config():
+    """Loads configuration from config.json, creating it with defaults if missing."""
+    cfg = dict(DEFAULT_CONFIG)
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    cfg.update(loaded)
+            print(f"Loaded persistent config from {CONFIG_FILE}: {cfg}")
+        except Exception as e:
+            print(f"Error loading {CONFIG_FILE}, using defaults: {e}")
+    else:
+        try:
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(cfg, f, indent=2)
+            print(f"Created default config file at {CONFIG_FILE}")
+        except Exception as e:
+            print(f"Could not create config file: {e}")
+    return cfg
+
+def save_config_file(cfg):
+    """Writes configuration dictionary to config.json."""
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(cfg, f, indent=2)
+        print(f"Saved configuration to {CONFIG_FILE}: {cfg}")
+        return True
+    except Exception as e:
+        print(f"Failed to save config to {CONFIG_FILE}: {e}")
+        return False
+
+# Initialize settings from file on startup
+active_config = load_config()
+scan_speed = int(active_config["scan_speed"])
+hunt_base_speed = int(active_config["hunt_base_speed"])
+min_area = int(active_config["min_area"])
+min_sat = int(active_config["min_sat"])
+min_val = int(active_config["min_val"])
+hue_tolerance = int(active_config["hue_tolerance"])
 
 # Shared thread-safe telemetry and JPEG buffer
 state_lock = threading.Lock()
@@ -118,6 +163,19 @@ def set_speeds():
         "min_val": min_val,
         "hue_tolerance": hue_tolerance
     })
+
+@app.route('/save_config', methods=['POST'])
+def save_config():
+    cfg = {
+        "scan_speed": scan_speed,
+        "hunt_base_speed": hunt_base_speed,
+        "min_area": min_area,
+        "min_sat": min_sat,
+        "min_val": min_val,
+        "hue_tolerance": hue_tolerance
+    }
+    success = save_config_file(cfg)
+    return jsonify({"success": success, "config": cfg})
 
 @app.route('/')
 def index():
@@ -231,6 +289,28 @@ def index():
             text-align: left;
             margin-left: 4px;
         }
+        .btn-save {
+            width: 100%;
+            margin-top: 14px;
+            padding: 10px 14px;
+            background: #27ae60;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .btn-save:hover { background: #2ecc71; }
+        .btn-save:active { transform: scale(0.98); }
+        .save-status {
+            font-size: 12px;
+            text-align: center;
+            margin-top: 6px;
+            color: #2ecc71;
+            min-height: 16px;
+        }
         .motors-box {
             grid-column: span 2;
             background: #1c1c24;
@@ -322,6 +402,9 @@ def index():
                         <span id="txt-hue" class="slider-val">10</span>
                         <span class="slider-default">(def: 10)</span>
                     </div>
+
+                    <button class="btn-save" onclick="savePersistentSettings()">Save Current Values to Disk</button>
+                    <div id="save-status" class="save-status"></div>
                 </div>
 
                 <div class="motors-box">
@@ -375,6 +458,30 @@ def index():
                 });
             } catch(e) {}
             setTimeout(() => { isUserSliding = false; }, 400);
+        }
+
+        async function savePersistentSettings() {
+            const statusEl = document.getElementById('save-status');
+            statusEl.innerText = 'Saving...';
+            statusEl.style.color = '#f39c12';
+            try {
+                const res = await fetch('/save_config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                const d = await res.json();
+                if (d.success) {
+                    statusEl.innerText = '✓ Successfully saved to config.json!';
+                    statusEl.style.color = '#2ecc71';
+                } else {
+                    statusEl.innerText = '✗ Error saving to disk';
+                    statusEl.style.color = '#e74c3c';
+                }
+            } catch (e) {
+                statusEl.innerText = '✗ Request failed';
+                statusEl.style.color = '#e74c3c';
+            }
+            setTimeout(() => { statusEl.innerText = ''; }, 3500);
         }
 
         async function updateTelemetry() {
