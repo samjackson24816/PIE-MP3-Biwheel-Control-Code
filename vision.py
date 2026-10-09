@@ -42,31 +42,18 @@ class VisionTracker:
         red_upper1 = np.array([10, 255, 255], np.uint8)
         red_lower2 = np.array([170, 120, 80], np.uint8)
         red_upper2 = np.array([180, 255, 255], np.uint8)
-
-        # Green color range
-        green_lower = np.array([25, 52, 72], np.uint8)
-        green_upper = np.array([102, 255, 255], np.uint8)
-
-        # Blue color range
-        blue_lower = np.array([94, 80, 2], np.uint8)
-        blue_upper = np.array([120, 255, 255], np.uint8)
+        
 
         red_mask1 = cv2.inRange(hsvFrame, red_lower1, red_upper1)
         red_mask2 = cv2.inRange(hsvFrame, red_lower2, red_upper2)
         red_mask = cv2.bitwise_or(red_mask1, red_mask2)
 
-        green_mask = cv2.inRange(hsvFrame, green_lower, green_upper)
-        blue_mask = cv2.inRange(hsvFrame, blue_lower, blue_upper)
 
         kernel = np.ones((5, 5), "uint8")
         red_mask = cv2.dilate(red_mask, kernel)
-        green_mask = cv2.dilate(green_mask, kernel)
-        blue_mask = cv2.dilate(blue_mask, kernel)
 
         color_masks = [
             ("Red", red_mask, (0, 0, 255)),
-            ("Green", green_mask, (0, 255, 0)),
-            ("Blue", blue_mask, (255, 0, 0))
         ]
 
         largest_area = 0.0
