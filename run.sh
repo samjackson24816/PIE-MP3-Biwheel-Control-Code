@@ -6,9 +6,9 @@ fuser -k 5000/tcp 2>/dev/null || true
 # Check if arduino-app-cli is available
 if command -v arduino-app-cli &> /dev/null; then
     echo "Restarting Arduino App via arduino-app-cli..."
-    arduino-app-cli app restart PIE-MP3-Biwheel-Control-Code 2>/dev/null || arduino-app-cli app start PIE-MP3-Biwheel-Control-Code
+    arduino-app-cli app restart . 2>/dev/null || arduino-app-cli app start .
     echo "App started! Following live logs (Ctrl+C to exit log view):"
-    arduino-app-cli app logs PIE-MP3-Biwheel-Control-Code -f
+    arduino-app-cli app logs . --follow
 else
     # Fallback to direct python if venv or python path is used
     echo "Running with python3..."
