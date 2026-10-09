@@ -17,6 +17,12 @@ print("Starting Biwheel Control Python MPU App with Direct-Connection Web Dashbo
 scan_speed = 30
 hunt_base_speed = 50
 
+# Vision parameter defaults
+min_area = 100
+min_sat = 120
+min_val = 80
+hue_tolerance = 10
+
 # Shared thread-safe telemetry and JPEG buffer
 state_lock = threading.Lock()
 latest_jpeg = None
@@ -31,7 +37,11 @@ current_telemetry = {
     "right_speed": 0,
     "fps": 0.0,
     "scan_speed": scan_speed,
-    "hunt_base_speed": hunt_base_speed
+    "hunt_base_speed": hunt_base_speed,
+    "min_area": min_area,
+    "min_sat": min_sat,
+    "min_val": min_val,
+    "hue_tolerance": hue_tolerance
 }
 
 # Create an initial placeholder image immediately so web stream never blocks
@@ -68,16 +78,46 @@ def status():
 
 @app.route('/set_speeds', methods=['POST'])
 def set_speeds():
-    global scan_speed, hunt_base_speed
+    global scan_speed, hunt_base_speed, min_area, min_sat, min_val, hue_tolerance, tracker
     data = request.get_json(silent=True) or {}
     if 'scan_speed' in data:
         scan_speed = max(0, min(255, int(data['scan_speed'])))
     if 'hunt_base_speed' in data:
         hunt_base_speed = max(0, min(255, int(data['hunt_base_speed'])))
+    if 'min_area' in data:
+        min_area = max(1, min(5000, int(data['min_area'])))
+    if 'min_sat' in data:
+        min_sat = max(0, min(255, int(data['min_sat'])))
+    if 'min_val' in data:
+        min_val = max(0, min(255, int(data['min_val'])))
+    if 'hue_tolerance' in data:
+        hue_tolerance = max(1, min(45, int(data['hue_tolerance'])))
+
+    if tracker is not None:
+        tracker.set_parameters(
+            min_area=min_area,
+            min_sat=min_sat,
+            min_val=min_val,
+            hue_tolerance=hue_tolerance
+        )
+
     with state_lock:
         current_telemetry['scan_speed'] = scan_speed
         current_telemetry['hunt_base_speed'] = hunt_base_speed
-    return jsonify({"success": True, "scan_speed": scan_speed, "hunt_base_speed": hunt_base_speed})
+        current_telemetry['min_area'] = min_area
+        current_telemetry['min_sat'] = min_sat
+        current_telemetry['min_val'] = min_val
+        current_telemetry['hue_tolerance'] = hue_tolerance
+
+    return jsonify({
+        "success": True, 
+        "scan_speed": scan_speed, 
+        "hunt_base_speed": hunt_base_speed,
+        "min_area": min_area,
+        "min_sat": min_sat,
+        "min_val": min_val,
+        "hue_tolerance": hue_tolerance
+    })
 
 @app.route('/')
 def index():
@@ -152,14 +192,23 @@ def index():
             border-radius: 6px;
             border-left: 4px solid #e67e22;
         }
+        .control-subhead {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #3498db;
+            margin-top: 10px;
+            margin-bottom: 2px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
         .slider-row {
             display: flex;
             align-items: center;
             gap: 10px;
-            margin-top: 10px;
+            margin-top: 8px;
         }
         .slider-row label {
-            width: 120px;
+            width: 155px;
             font-size: 13px;
             font-weight: 600;
         }
@@ -174,6 +223,13 @@ def index():
             color: #f39c12;
             text-align: right;
             font-size: 14px;
+        }
+        .slider-default {
+            width: 75px;
+            font-size: 11px;
+            color: #7f8c8d;
+            text-align: left;
+            margin-left: 4px;
         }
         .motors-box {
             grid-column: span 2;
@@ -225,16 +281,46 @@ def index():
                 </div>
 
                 <div class="control-box">
-                    <div class="metric-label">Live Speed Controls</div>
+                    <div class="metric-label">Live Robot & Vision Controls</div>
+                    
+                    <div class="control-subhead">Motor Speeds</div>
                     <div class="slider-row">
                         <label for="slider-scan">Scan Speed:</label>
                         <input type="range" id="slider-scan" min="0" max="150" value="30" oninput="onSpeedChange()">
                         <span id="txt-scan" class="slider-val">30</span>
+                        <span class="slider-default">(def: 30)</span>
                     </div>
                     <div class="slider-row">
-                        <label for="slider-hunt">Hunt Base:</label>
+                        <label for="slider-hunt">Hunt Base Speed:</label>
                         <input type="range" id="slider-hunt" min="0" max="200" value="50" oninput="onSpeedChange()">
                         <span id="txt-hunt" class="slider-val">50</span>
+                        <span class="slider-default">(def: 50)</span>
+                    </div>
+
+                    <div class="control-subhead">Camera / Detection Sensitivity</div>
+                    <div class="slider-row">
+                        <label for="slider-area">Min Contour Area:</label>
+                        <input type="range" id="slider-area" min="10" max="2000" step="10" value="100" oninput="onSpeedChange()">
+                        <span id="txt-area" class="slider-val">100</span>
+                        <span class="slider-default">(def: 100)</span>
+                    </div>
+                    <div class="slider-row">
+                        <label for="slider-sat">Min Saturation:</label>
+                        <input type="range" id="slider-sat" min="0" max="255" value="120" oninput="onSpeedChange()">
+                        <span id="txt-sat" class="slider-val">120</span>
+                        <span class="slider-default">(def: 120)</span>
+                    </div>
+                    <div class="slider-row">
+                        <label for="slider-val">Min Brightness:</label>
+                        <input type="range" id="slider-val" min="0" max="255" value="80" oninput="onSpeedChange()">
+                        <span id="txt-val" class="slider-val">80</span>
+                        <span class="slider-default">(def: 80)</span>
+                    </div>
+                    <div class="slider-row">
+                        <label for="slider-hue">Hue Tolerance:</label>
+                        <input type="range" id="slider-hue" min="1" max="30" value="10" oninput="onSpeedChange()">
+                        <span id="txt-hue" class="slider-val">10</span>
+                        <span class="slider-default">(def: 10)</span>
                     </div>
                 </div>
 
@@ -262,14 +348,30 @@ def index():
             isUserSliding = true;
             const scanVal = parseInt(document.getElementById('slider-scan').value);
             const huntVal = parseInt(document.getElementById('slider-hunt').value);
+            const areaVal = parseInt(document.getElementById('slider-area').value);
+            const satVal = parseInt(document.getElementById('slider-sat').value);
+            const valVal = parseInt(document.getElementById('slider-val').value);
+            const hueVal = parseInt(document.getElementById('slider-hue').value);
+
             document.getElementById('txt-scan').innerText = scanVal;
             document.getElementById('txt-hunt').innerText = huntVal;
+            document.getElementById('txt-area').innerText = areaVal;
+            document.getElementById('txt-sat').innerText = satVal;
+            document.getElementById('txt-val').innerText = valVal;
+            document.getElementById('txt-hue').innerText = hueVal;
 
             try {
                 await fetch('/set_speeds', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({scan_speed: scanVal, hunt_base_speed: huntVal})
+                    body: JSON.stringify({
+                        scan_speed: scanVal, 
+                        hunt_base_speed: huntVal,
+                        min_area: areaVal,
+                        min_sat: satVal,
+                        min_val: valVal,
+                        hue_tolerance: hueVal
+                    })
                 });
             } catch(e) {}
             setTimeout(() => { isUserSliding = false; }, 400);
@@ -307,6 +409,23 @@ def index():
                     document.getElementById('txt-scan').innerText = d.scan_speed;
                     document.getElementById('slider-hunt').value = d.hunt_base_speed;
                     document.getElementById('txt-hunt').innerText = d.hunt_base_speed;
+
+                    if (d.min_area !== undefined) {
+                        document.getElementById('slider-area').value = d.min_area;
+                        document.getElementById('txt-area').innerText = d.min_area;
+                    }
+                    if (d.min_sat !== undefined) {
+                        document.getElementById('slider-sat').value = d.min_sat;
+                        document.getElementById('txt-sat').innerText = d.min_sat;
+                    }
+                    if (d.min_val !== undefined) {
+                        document.getElementById('slider-val').value = d.min_val;
+                        document.getElementById('txt-val').innerText = d.min_val;
+                    }
+                    if (d.hue_tolerance !== undefined) {
+                        document.getElementById('slider-hue').value = d.hue_tolerance;
+                        document.getElementById('txt-hue').innerText = d.hue_tolerance;
+                    }
                 }
             } catch (err) {}
         }
@@ -344,7 +463,12 @@ def send_motors(l_speed, r_speed):
 def init_vision_and_control():
     global tracker, current_state
     try:
-        tracker = VisionTracker()
+        tracker = VisionTracker(
+            min_area=min_area,
+            min_sat=min_sat,
+            min_val=min_val,
+            hue_tolerance=hue_tolerance
+        )
     except Exception as e:
         print(f"VisionTracker initialization error: {e}")
         tracker = None
@@ -386,7 +510,7 @@ def step():
     x_norm, y_norm, color_name, area, best_box = tracker.process_frame(frame, draw_annotations=True)
 
     delta = 0.0
-    if x_norm is not None and area > 100:
+    if best_box is not None and x_norm is not None:
         if current_state != "HUNT":
             print(f"Target found ({color_name}, area={int(area)}) -> Switching to HUNT")
             current_state = "HUNT"
@@ -428,11 +552,14 @@ def step():
             "right_speed": r_speed,
             "fps": calculated_fps,
             "scan_speed": scan_speed,
-            "hunt_base_speed": hunt_base_speed
+            "hunt_base_speed": hunt_base_speed,
+            "min_area": min_area,
+            "min_sat": min_sat,
+            "min_val": min_val,
+            "hue_tolerance": hue_tolerance
         }
 
     time.sleep(0.03)
 
 if __name__ == '__main__':
-    App.run(user_loop=step)
     App.run(user_loop=step)

@@ -2,11 +2,17 @@ import cv2
 import numpy as np
 
 class VisionTracker:
-    def __init__(self, camera_index=0):
+    def __init__(self, camera_index=0, min_area=100, min_sat=120, min_val=80, hue_tolerance=10):
         """Initializes webcam capture with fallback from index 0 to 1."""
         self.cam = cv2.VideoCapture(camera_index)
         self.cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+        # Vision tuning parameters (default to original values)
+        self.min_area = int(min_area)
+        self.min_sat = int(min_sat)
+        self.min_val = int(min_val)
+        self.hue_tolerance = int(hue_tolerance)
         
         if not self.cam.isOpened():
             print(f"WARNING: Camera index {camera_index} failed to open. Trying index 1...")
@@ -18,6 +24,17 @@ class VisionTracker:
             print("SUCCESS: Camera opened successfully.")
         else:
             print("ERROR: Could not open camera at index 0 or 1.")
+
+    def set_parameters(self, min_area=None, min_sat=None, min_val=None, hue_tolerance=None):
+        """Live updates detection thresholds."""
+        if min_area is not None:
+            self.min_area = max(1, int(min_area))
+        if min_sat is not None:
+            self.min_sat = max(0, min(255, int(min_sat)))
+        if min_val is not None:
+            self.min_val = max(0, min(255, int(min_val)))
+        if hue_tolerance is not None:
+            self.hue_tolerance = max(1, min(45, int(hue_tolerance)))
 
     def process_frame(self, frame, draw_annotations=True):
         """
@@ -37,17 +54,15 @@ class VisionTracker:
 
         hsvFrame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        # Red color ranges
-        red_lower1 = np.array([0, 120, 80], np.uint8)
-        red_upper1 = np.array([10, 255, 255], np.uint8)
-        red_lower2 = np.array([170, 120, 80], np.uint8)
+        # Red color ranges in HSV with configurable parameters
+        red_lower1 = np.array([0, self.min_sat, self.min_val], np.uint8)
+        red_upper1 = np.array([self.hue_tolerance, 255, 255], np.uint8)
+        red_lower2 = np.array([180 - self.hue_tolerance, self.min_sat, self.min_val], np.uint8)
         red_upper2 = np.array([180, 255, 255], np.uint8)
-        
 
         red_mask1 = cv2.inRange(hsvFrame, red_lower1, red_upper1)
         red_mask2 = cv2.inRange(hsvFrame, red_lower2, red_upper2)
         red_mask = cv2.bitwise_or(red_mask1, red_mask2)
-
 
         kernel = np.ones((5, 5), "uint8")
         red_mask = cv2.dilate(red_mask, kernel)
@@ -64,7 +79,7 @@ class VisionTracker:
             contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             for contour in contours:
                 area = cv2.contourArea(contour)
-                if area > 100:
+                if area > self.min_area:
                     bx, by, bw, bh = cv2.boundingRect(contour)
                     if draw_annotations:
                         cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), bgr_color, 2)
