@@ -1,10 +1,15 @@
 import time
 import threading
 import json
+import sys
+import os
 import cv2
 import numpy as np
 from flask import Flask, Response, jsonify
 from arduino.app_utils import App, Bridge
+
+# Add parent directory to sys.path to import root vision.py
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from vision import VisionTracker
 
 print("Starting Biwheel Control Python MPU App with Vision Tracking & Telemetry Stream Server...")
