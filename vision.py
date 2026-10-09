@@ -13,6 +13,10 @@ class VisionTracker:
         self.min_sat = int(min_sat)
         self.min_val = int(min_val)
         self.hue_tolerance = int(hue_tolerance)
+
+        # Pre-allocate morphological kernel and HSV threshold arrays
+        self.kernel = np.ones((5, 5), dtype=np.uint8)
+        self._update_hsv_ranges()
         
         if not self.cam.isOpened():
             print(f"WARNING: Camera index {camera_index} failed to open. Trying index 1...")
@@ -25,16 +29,29 @@ class VisionTracker:
         else:
             print("ERROR: Could not open camera at index 0 or 1.")
 
+    def _update_hsv_ranges(self):
+        """Pre-computes NumPy arrays for red HSV boundaries to eliminate per-frame allocations."""
+        self.red_lower1 = np.array([0, self.min_sat, self.min_val], dtype=np.uint8)
+        self.red_upper1 = np.array([self.hue_tolerance, 255, 255], dtype=np.uint8)
+        self.red_lower2 = np.array([180 - self.hue_tolerance, self.min_sat, self.min_val], dtype=np.uint8)
+        self.red_upper2 = np.array([180, 255, 255], dtype=np.uint8)
+
     def set_parameters(self, min_area=None, min_sat=None, min_val=None, hue_tolerance=None):
         """Live updates detection thresholds."""
+        changed = False
         if min_area is not None:
             self.min_area = max(1, int(min_area))
         if min_sat is not None:
             self.min_sat = max(0, min(255, int(min_sat)))
+            changed = True
         if min_val is not None:
             self.min_val = max(0, min(255, int(min_val)))
+            changed = True
         if hue_tolerance is not None:
             self.hue_tolerance = max(1, min(45, int(hue_tolerance)))
+            changed = True
+        if changed:
+            self._update_hsv_ranges()
 
     def process_frame(self, frame, draw_annotations=True):
         """
@@ -52,20 +69,17 @@ class VisionTracker:
         h, w = frame.shape[:2]
         cx, cy = w / 2.0, h / 2.0
 
-        hsvFrame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        # Downsample 2x for fast segmentation on embedded MPU (QRB2210)
+        proc_w, proc_h = w // 2, h // 2
+        small_frame = cv2.resize(frame, (proc_w, proc_h), interpolation=cv2.INTER_NEAREST)
+        hsvFrame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2HSV)
 
-        # Red color ranges in HSV with configurable parameters
-        red_lower1 = np.array([0, self.min_sat, self.min_val], np.uint8)
-        red_upper1 = np.array([self.hue_tolerance, 255, 255], np.uint8)
-        red_lower2 = np.array([180 - self.hue_tolerance, self.min_sat, self.min_val], np.uint8)
-        red_upper2 = np.array([180, 255, 255], np.uint8)
-
-        red_mask1 = cv2.inRange(hsvFrame, red_lower1, red_upper1)
-        red_mask2 = cv2.inRange(hsvFrame, red_lower2, red_upper2)
+        # Red color ranges in HSV using pre-allocated threshold arrays
+        red_mask1 = cv2.inRange(hsvFrame, self.red_lower1, self.red_upper1)
+        red_mask2 = cv2.inRange(hsvFrame, self.red_lower2, self.red_upper2)
         red_mask = cv2.bitwise_or(red_mask1, red_mask2)
 
-        kernel = np.ones((5, 5), "uint8")
-        red_mask = cv2.dilate(red_mask, kernel)
+        red_mask = cv2.dilate(red_mask, self.kernel)
 
         color_masks = [
             ("Red", red_mask, (0, 0, 255)),
@@ -75,17 +89,26 @@ class VisionTracker:
         best_box = None
         best_color = None
 
+        # Scale min_area threshold for the downscaled (2x) resolution
+        scaled_min_area = self.min_area / 4.0
+
         for color_name, mask, bgr_color in color_masks:
-            contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            # RETR_EXTERNAL avoids computing unnecessary nested contour hierarchies
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             for contour in contours:
                 area = cv2.contourArea(contour)
-                if area > self.min_area:
+                if area > scaled_min_area:
                     bx, by, bw, bh = cv2.boundingRect(contour)
+                    # Scale bounding box back to original frame dimensions
+                    orig_bx, orig_by = bx * 2, by * 2
+                    orig_bw, orig_bh = bw * 2, bh * 2
+                    orig_area = float(area * 4.0)
+
                     if draw_annotations:
-                        cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), bgr_color, 2)
-                    if area > largest_area:
-                        largest_area = float(area)
-                        best_box = (bx, by, bw, bh)
+                        cv2.rectangle(frame, (orig_bx, orig_by), (orig_bx + orig_bw, orig_by + orig_bh), bgr_color, 2)
+                    if orig_area > largest_area:
+                        largest_area = orig_area
+                        best_box = (orig_bx, orig_by, orig_bw, orig_bh)
                         best_color = color_name
 
         # Draw crosshair at center (0,0)
