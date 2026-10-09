@@ -1,10 +1,16 @@
 #!/bin/bash
-# Stop any stale Python or Flask process bound to port 5000
+# Free port 5000 in case a stale process is holding it
 echo "Freeing port 5000..."
 fuser -k 5000/tcp 2>/dev/null || true
-pkill -f camera_test.py 2>/dev/null || true
 
-# Run python/main.py directly with python3
-echo "Starting python/main.py directly..."
-cd "$(dirname "$0")"
-python3 python/main.py
+# Check if arduino-app-cli is available
+if command -v arduino-app-cli &> /dev/null; then
+    echo "Restarting Arduino App via arduino-app-cli..."
+    arduino-app-cli app restart PIE-MP3-Biwheel-Control-Code 2>/dev/null || arduino-app-cli app start PIE-MP3-Biwheel-Control-Code
+    echo "App started! Following live logs (Ctrl+C to exit log view):"
+    arduino-app-cli app logs PIE-MP3-Biwheel-Control-Code -f
+else
+    # Fallback to direct python if venv or python path is used
+    echo "Running with python3..."
+    python3 python/main.py
+fi
