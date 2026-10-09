@@ -4,7 +4,7 @@ import sys
 import os
 import cv2
 import numpy as np
-from flask import Flask, Response, jsonify
+from flask import Flask, Response, jsonify, request
 from arduino.app_utils import App, Bridge
 
 # Ensure import of root vision.py
@@ -12,6 +12,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from vision import VisionTracker
 
 print("Starting Biwheel Control Python MPU App with Direct-Connection Web Dashboard...")
+
+# Shared configurable parameters (updated dynamically by web slider)
+scan_speed = 30
+hunt_base_speed = 50
 
 # Shared thread-safe telemetry and JPEG buffer
 state_lock = threading.Lock()
@@ -25,7 +29,9 @@ current_telemetry = {
     "delta": 0.0,
     "left_speed": 0,
     "right_speed": 0,
-    "fps": 0.0
+    "fps": 0.0,
+    "scan_speed": scan_speed,
+    "hunt_base_speed": hunt_base_speed
 }
 
 # Create an initial placeholder image immediately so web stream never blocks
@@ -59,6 +65,19 @@ def video_feed():
 def status():
     with state_lock:
         return jsonify(current_telemetry)
+
+@app.route('/set_speeds', methods=['POST'])
+def set_speeds():
+    global scan_speed, hunt_base_speed
+    data = request.get_json(silent=True) or {}
+    if 'scan_speed' in data:
+        scan_speed = max(0, min(255, int(data['scan_speed'])))
+    if 'hunt_base_speed' in data:
+        hunt_base_speed = max(0, min(255, int(data['hunt_base_speed'])))
+    with state_lock:
+        current_telemetry['scan_speed'] = scan_speed
+        current_telemetry['hunt_base_speed'] = hunt_base_speed
+    return jsonify({"success": True, "scan_speed": scan_speed, "hunt_base_speed": hunt_base_speed})
 
 @app.route('/')
 def index():
@@ -126,6 +145,36 @@ def index():
         }
         .metric-label { font-size: 11px; text-transform: uppercase; color: #8a8aa0; margin-bottom: 4px; }
         .metric-value { font-size: 18px; font-weight: bold; color: #ffffff; }
+        .control-box {
+            grid-column: span 2;
+            background: #1c1c24;
+            padding: 14px;
+            border-radius: 6px;
+            border-left: 4px solid #e67e22;
+        }
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .slider-row label {
+            width: 120px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .slider-row input[type="range"] {
+            flex: 1;
+            accent-color: #e67e22;
+            cursor: pointer;
+        }
+        .slider-val {
+            width: 45px;
+            font-weight: bold;
+            color: #f39c12;
+            text-align: right;
+            font-size: 14px;
+        }
         .motors-box {
             grid-column: span 2;
             background: #1c1c24;
@@ -174,6 +223,21 @@ def index():
                     <div class="metric-label">Y Offset (y_norm)</div>
                     <div id="val-y" class="metric-value">0.00</div>
                 </div>
+
+                <div class="control-box">
+                    <div class="metric-label">Live Speed Controls</div>
+                    <div class="slider-row">
+                        <label for="slider-scan">Scan Speed:</label>
+                        <input type="range" id="slider-scan" min="0" max="150" value="30" oninput="onSpeedChange()">
+                        <span id="txt-scan" class="slider-val">30</span>
+                    </div>
+                    <div class="slider-row">
+                        <label for="slider-hunt">Hunt Base:</label>
+                        <input type="range" id="slider-hunt" min="0" max="200" value="50" oninput="onSpeedChange()">
+                        <span id="txt-hunt" class="slider-val">50</span>
+                    </div>
+                </div>
+
                 <div class="motors-box">
                     <div class="metric-label">Motor Speeds (PWM / Direction)</div>
                     <div class="motor-bars">
@@ -192,6 +256,25 @@ def index():
     </div>
 
     <script>
+        let isUserSliding = false;
+
+        async function onSpeedChange() {
+            isUserSliding = true;
+            const scanVal = parseInt(document.getElementById('slider-scan').value);
+            const huntVal = parseInt(document.getElementById('slider-hunt').value);
+            document.getElementById('txt-scan').innerText = scanVal;
+            document.getElementById('txt-hunt').innerText = huntVal;
+
+            try {
+                await fetch('/set_speeds', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({scan_speed: scanVal, hunt_base_speed: huntVal})
+                });
+            } catch(e) {}
+            setTimeout(() => { isUserSliding = false; }, 400);
+        }
+
         async function updateTelemetry() {
             try {
                 const res = await fetch('/status');
@@ -218,6 +301,13 @@ def index():
                 document.getElementById('val-fps').innerText = d.fps.toFixed(1);
                 document.getElementById('val-motor-l').innerText = d.left_speed;
                 document.getElementById('val-motor-r').innerText = d.right_speed;
+
+                if (!isUserSliding && d.scan_speed !== undefined) {
+                    document.getElementById('slider-scan').value = d.scan_speed;
+                    document.getElementById('txt-scan').innerText = d.scan_speed;
+                    document.getElementById('slider-hunt').value = d.hunt_base_speed;
+                    document.getElementById('txt-hunt').innerText = d.hunt_base_speed;
+                }
             } catch (err) {}
         }
         setInterval(updateTelemetry, 150);
@@ -237,6 +327,20 @@ print("Flask server thread started immediately on port 5000.")
 tracker = None
 current_state = "SCAN"
 
+def send_motors(l_speed, r_speed):
+    """Sends raw target speeds to STM32 via set_motors, falling back to legacy methods if needed."""
+    try:
+        Bridge.notify("set_motors", int(l_speed), int(r_speed))
+    except Exception as e:
+        # Fallback if set_motors is not yet flashed on the Arduino
+        try:
+            if l_speed == scan_speed and r_speed == -scan_speed:
+                Bridge.notify("scan")
+            else:
+                Bridge.notify("hunt", float(l_speed - hunt_base_speed))
+        except Exception:
+            pass
+
 def init_vision_and_control():
     global tracker, current_state
     try:
@@ -245,13 +349,11 @@ def init_vision_and_control():
         print(f"VisionTracker initialization error: {e}")
         tracker = None
     try:
-        Bridge.notify("scan")
+        send_motors(scan_speed, -scan_speed)
         print("Initial state sent to Bridge: SCAN")
     except Exception as e:
         print(f"Bridge notify exception: {e}")
 
-SCAN_SPEED = 30
-HUNT_BASE_SPEED = 50
 last_time = time.time()
 frame_count = 0
 calculated_fps = 0.0
@@ -290,24 +392,17 @@ def step():
             current_state = "HUNT"
 
         delta = x_norm * 30.0
-        try:
-            Bridge.notify("hunt", float(delta))
-        except Exception:
-            pass
-
-        l_speed = HUNT_BASE_SPEED + int(delta)
-        r_speed = HUNT_BASE_SPEED - int(delta)
+        l_speed = int(hunt_base_speed + delta)
+        r_speed = int(hunt_base_speed - delta)
+        send_motors(l_speed, r_speed)
     else:
         if current_state != "SCAN":
             print("Target lost -> Switching to SCAN")
             current_state = "SCAN"
-            try:
-                Bridge.notify("scan")
-            except Exception:
-                pass
 
-        l_speed = SCAN_SPEED
-        r_speed = -HUNT_BASE_SPEED
+        l_speed = int(scan_speed)
+        r_speed = int(-scan_speed)
+        send_motors(l_speed, r_speed)
 
     # Draw telemetry overlay text directly onto frame
     cv2.putText(frame, f"STATE: {current_state} | FPS: {calculated_fps:.1f}", 
@@ -331,10 +426,13 @@ def step():
             "delta": delta,
             "left_speed": l_speed,
             "right_speed": r_speed,
-            "fps": calculated_fps
+            "fps": calculated_fps,
+            "scan_speed": scan_speed,
+            "hunt_base_speed": hunt_base_speed
         }
 
     time.sleep(0.03)
 
 if __name__ == '__main__':
+    App.run(user_loop=step)
     App.run(user_loop=step)
