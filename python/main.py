@@ -2,6 +2,7 @@ import time
 import threading
 import json
 import cv2
+import numpy as np
 from flask import Flask, Response, jsonify
 from arduino.app_utils import App, Bridge
 from vision import VisionTracker
@@ -32,15 +33,22 @@ def video_feed():
         while True:
             with frame_lock:
                 if latest_frame is None:
-                    time.sleep(0.05)
-                    continue
-                success, encoded = cv2.imencode('.jpg', latest_frame)
+                    # Create a placeholder frame so stream never hangs
+                    placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+                    cv2.putText(placeholder, "Camera Initializing...", (160, 240), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+                    frame_to_encode = placeholder
+                else:
+                    frame_to_encode = latest_frame
+                
+                success, encoded = cv2.imencode('.jpg', frame_to_encode)
                 if not success:
+                    time.sleep(0.05)
                     continue
                 frame_bytes = encoded.tobytes()
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            time.sleep(0.03)
+            time.sleep(0.05)
     return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/status')

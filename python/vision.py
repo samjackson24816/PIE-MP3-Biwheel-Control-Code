@@ -3,10 +3,21 @@ import numpy as np
 
 class VisionTracker:
     def __init__(self, camera_index=0):
-        """Initializes webcam capture (default index 0 for UNO Q USB camera)."""
+        """Initializes webcam capture with fallback from index 0 to 1."""
         self.cam = cv2.VideoCapture(camera_index)
         self.cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        
+        if not self.cam.isOpened():
+            print(f"WARNING: Camera index {camera_index} failed to open. Trying index 1...")
+            self.cam = cv2.VideoCapture(1)
+            self.cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            self.cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            
+        if self.cam.isOpened():
+            print("SUCCESS: Camera opened successfully.")
+        else:
+            print("ERROR: Could not open camera at index 0 or 1.")
 
     def get_largest_shape_position_from_frame(self, frame):
         """
