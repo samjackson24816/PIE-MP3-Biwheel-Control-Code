@@ -13,7 +13,7 @@ Adafruit_DCMotor *rightMotor = AFMS.getMotor(2);
 // CODE-WIDE CONFIGURATION PARAMETERS
 // ==========================================
 // Set to -1 if a motor is wired backwards physically
-const int LEFT_MOTOR_DIR = -1;
+const int LEFT_MOTOR_DIR = 1;
 const int RIGHT_MOTOR_DIR = 1; 
 
 const int SCAN_SPEED = 30;
@@ -80,5 +80,5 @@ void setup() {
 }
 
 void loop() {
-  delay(100);
+  delay(50);
 }
